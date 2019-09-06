@@ -22,9 +22,6 @@ Note almost all of these can be set via the command line as well.
 
 * `DATABASE_URL` - The postgres database to store its information on what databases its provisioned, this should be in the format of `postgres://user:password@host:port/database?sslmode=disable` or leave off sslmode=disable if ssl is supported.  This will auto create the schema if its unavailable.
 * `NAME_PREFIX` - The prefix to use for all provisioned databases this should be short and help namespace databases created by the broker vs. other databases that may exist in the broker for other purposes. This is global to all of the providers configured.
-* `VAULT_ADDR` - Vault address
-* `VAULT_TOKEN` - Vault token
-* `MONGODB_SECRET` - Secret for mongodb
 * `MONGODB_API_RUNTIME` - Version of mongodb api
 
 **Optional**
@@ -38,7 +35,7 @@ You can deploy the image `akkeris/mongodb-broker:latest` via docker with the env
 
 ### 3. Plans
 
-The plans table can be modified to adjust plans, at the moment only two exist, versioned and un-versioned. They both are encrypted using the `AWS_KMS_KEY_ID` environment variable.  The default plans can be modified to make them unencrypted.
+The plans table can be modified to adjust plans, at the moment only two exist, versioned and un-versioned. The default plans can be modified to make them unencrypted.
 
 ### 4. Setup Task Worker
 
