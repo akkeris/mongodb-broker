@@ -1,12 +1,15 @@
 package broker
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	_ "github.com/lib/pq"
 	"gopkg.in/mgo.v2"
+	"net"
 	"net/url"
+	"os"
 	"strings"
 )
 
@@ -80,9 +83,11 @@ func (provider MongodbProvider) Provision(Id string, plan *ProviderPlan, Owner s
 
 	dialInfo, err := mgo.ParseURL(settings.MasterUri)
 	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
-		conn, err := tls.Dial("tcp", addr.String(), tlsConfig)
+		conn, err := tls.Dial("tcp", addr.String(), nil)
 		return conn, err
 	}
+
+	fmt.Println(dialInfo)
 	if err != nil {
 		fmt.Println("Failed to parse URI: ", err)
 		os.Exit(1)
@@ -151,7 +156,7 @@ func (provider MongodbProvider) Deprovision(instance *Instance, takeSnapshot boo
 	}
 	dialInfo, err := mgo.ParseURL(settings.MasterUri)
 	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
-		conn, err := tls.Dial("tcp", addr.String(), tlsConfig)
+		conn, err := tls.Dial("tcp", addr.String(), nil)
 		return conn, err
 	}
 	if err != nil {
