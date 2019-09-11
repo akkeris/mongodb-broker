@@ -31,7 +31,7 @@ require (
 	github.com/onsi/gomega v0.0.0-20190113212917-5533ce8a0da3 // indirect
 	github.com/peterbourgon/diskv v2.0.1+incompatible // indirect
 	github.com/pmorie/go-open-service-broker-client v0.0.0-20180928143052-79b374a2302f
-	github.com/pmorie/osb-broker-lib v0.0.0-20180516212803-87d71cfbf342
+	github.com/pmorie/osb-broker-lib v0.0.0-20180423193413-f4ca270ef323
 	github.com/prometheus/client_golang v0.9.2
 	github.com/shawn-hurley/osb-broker-k8s-lib v0.0.0-20180430125558-bed19ac36ffe
 	github.com/spf13/pflag v1.0.3 // indirect

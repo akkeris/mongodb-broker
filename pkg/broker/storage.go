@@ -202,16 +202,16 @@ begin
         insert into services 
             (service, name, human_name, description, categories, image, beta, deprecated)
         values 
-		('01bb60d2-f2bb-64c0-4c8b-edd731a690bd','akkeris-mongodb', 'Akkeris Mongodb', 'NOSQL database.', 'Data Stores,mongodb', 'https://commons.wikimedia.org/wiki/File:MongoDB-Logo-5c3a7405a85675366beb3a5ec4c032348c390b3f142f5e6dddf1d78e2df5cb5c.png#/media/File:MongoDB-Logo-5c3a7405a85675366beb3a5ec4c032348c390b3f142f5e6dddf1d78e2df5cb5c.png', false, false),
+			('01bb60d2-f2bb-64c0-4c8b-edd731a690bd','mongodb', 'Akkeris Mongodb', 'NOSQL database.', 'Data Stores,mongodb', '', false, false);
     end if;
 
     -- populate some default plans
     if (select count(*) from plans) = 0 then
         insert into plans 
-            (plan, service, name, human_name, description, version, type, scheme, categories, cost_cents, preprovision, attributes, provider, provider_private_details, deprecated)
+            (plan, service, name, human_name, description, version, type, scheme, categories, cost_cents, preprovision, attributes, provider, provider_private_details)
         values 
-            ('3b0e2917-e997-7134-afa4-ba55a9d5a755', '01bb60d2-f2bb-64c0-4c8b-edd731a690bd', 'shared', 'Shared', 'Mongodb shared instance',  '6.0', 'akkeris-mongodb', 'mongodb', 'Data Stores', 2500, 0, ,'', 'mongodb', {"master_uri":"${MONGO_DB_SHARED_URI}", "engine":"mongodb", "engine_version":"3.2"}', 'false'),
-            ('9724e28c-dd3d-0b41-835d-8b5d918c430a', '01bb60d2-f2bb-64c0-4c8b-edd731a690bd', 'high-availabilty', 'High-Availability', 'Mongodb with high availabity - 100gb',    '6.0', 'akkeris-mongodb', 'mongodb', 'Data Stores', 3500, 0, '', 'mongodb', '{"master_uri":"${MONGO_DB_SHARED_URI}", "engine":"mongodb", "engine_version":"3.2"}', false)
+            ('3b0e2917-e997-7134-afa4-ba55a9d5a755', '01bb60d2-f2bb-64c0-4c8b-edd731a690bd', 'shared', 'Shared', 'Mongodb shared instance', '6.0', 'mongodb', 'mongodb', 'Data Stores', 2500, 0, '{}', 'mongodb', '{"master_uri":"${MONGO_DB_SHARED_URI}", "engine":"mongodb", "engine_version":"3.2"}'),
+            ('9724e28c-dd3d-0b41-835d-8b5d918c430a', '01bb60d2-f2bb-64c0-4c8b-edd731a690bd', 'high-availabilty', 'High-Availability', 'Mongodb with high availabity - 100gb', '6.0', 'mongodb', 'mongodb', 'Data Stores', 3500, 0, '{}', 'mongodb', '{"master_uri":"${MONGO_DB_SHARED_URI}", "engine":"mongodb", "engine_version":"3.2"}');
     end if;
 end
 $$

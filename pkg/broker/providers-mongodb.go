@@ -3,69 +3,17 @@ package broker
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	_ "github.com/lib/pq"
 	"gopkg.in/mgo.v2"
 	"net/url"
 	"strings"
-	"time"
 )
-
-var (
-	Session       *mgo.Session
-	BrokerDB      *mgo.Database
-	plans         PlanSpec
-	plansMap      map[string]string
-	namePrefix    string
-	engineversion string
-)
-
-const (
-	brokerDbName        string = "broker"
-	provisionCollection string = "provision"
-	plansCollection     string = "plans"
-)
-
-type DatabaseSpec struct {
-	Name        string    `json:"name"`
-	Username    string    `json:"username"`
-	Password    string    `json:"password"`
-	Created     time.Time `json:"created"`
-	Host        string    `json:"hostname"`
-	Port        string    `json:"port"`
-	Plan        string    `json:"plan"`
-	BillingCode string    `json:"billingcode"`
-	Misc        string    `json:"misc"`
-}
-
-type DBUrl struct {
-	Url string `json:"MONGODB_URL"`
-}
-
-type FullDatabaseSpec struct {
-	DatabaseSpec
-	DBUrl
-}
 
 type InfoData struct {
 	DatabaseName string
 	BillingCode  string
 	DATABASE_URL string
-}
-
-type PlanSpec struct {
-	Name        string `json:"name"`
-	Size        string `json:"size"`
-	Description string `json:"description"`
-}
-
-type ProvisionSpec struct {
-	Plan        string
-	BillingCode string
-	Misc        string
-}
-
-type MsgSpec struct {
-	Msg string `json:"message"`
 }
 
 // provider=mongodb in database
@@ -82,21 +30,6 @@ func (mpps MongodbProviderPlanSettings) MasterHost() string {
 		return ""
 	}
 	return db.Host
-}
-
-func (mpps MongodbProviderPlanSettings) GetMasterUriWithDb(dbName string) string {
-	db, err := url.Parse(mpps.MasterUri)
-	if err != nil {
-		return ""
-	}
-	pass, ok := db.User.Password()
-	if ok == true {
-		return "mongodb://" + db.User.Username() + ":" + pass + "@" + db.Host + "/" + dbName + "?" + db.RawQuery
-	} else if db.User.Username() != "" {
-		return "mongodb://" + db.User.Username() + "@" + db.Host + "/" + dbName + "?" + db.RawQuery
-	} else {
-		return "mongodb://" + db.Host + "/" + dbName + "?" + db.RawQuery
-	}
 }
 
 type MongodbProvider struct {
@@ -139,12 +72,26 @@ func (provider MongodbProvider) PerformPostProvision(db *Instance) (*Instance, e
 func (provider MongodbProvider) Provision(Id string, plan *ProviderPlan, Owner string) (*Instance, error) {
 	var settings MongodbProviderPlanSettings
 	if err := json.Unmarshal([]byte(plan.providerPrivateDetails), &settings); err != nil {
+		fmt.Println(err)
 		return nil, err
 	}
 
-	pSession, err = mgo.Dial(settings.MasterUri)
+	fmt.Println(settings)
+
+	dialInfo, err := mgo.ParseURL(settings.MasterUri)
+	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
+		conn, err := tls.Dial("tcp", addr.String(), tlsConfig)
+		return conn, err
+	}
 	if err != nil {
-		return err
+		fmt.Println("Failed to parse URI: ", err)
+		os.Exit(1)
+	}
+
+	pSession, err := mgo.DialWithInfo(dialInfo)
+	if err != nil {
+		fmt.Println(err)
+		return nil, err
 	}
 
 	pSession.SetMode(mgo.Monotonic, true)
@@ -155,46 +102,40 @@ func (provider MongodbProvider) Provision(Id string, plan *ProviderPlan, Owner s
 		mgo.RoleDBAdmin,
 	}
 
-	c := pSession.DB("broker").C("provision")
+	var name = strings.ToLower(provider.namePrefix + RandomString(8))
+	var username = strings.ToLower("u" + RandomString(8))
+	var password = RandomString(16)
+	var billingcode = Owner
 
-	pSpec := DatabaseSpec{}
-	pSpec.Name = strings.ToLower(provider.namePrefix + RandomString(8))
-	pSpec.Username = strings.ToLower("u" + RandomString(8))
-	pSpec.Password = RandomString(16)
-	pSpec.Created = time.Now()
-	pSpec.Plan = plan.ID
-	pSpec.BillingCode = Owner
-	pSpec.Host = Dbc.DbHosts[0]
-	pSpec.Port = Dbc.DbPort
-
-	err = c.Insert(&pSpec)
 	if err != nil {
+		fmt.Println(err)
 		return nil, err
 	} else {
 		pUser := mgo.User{
-			Username: pSpec.Username,
-			Password: pSpec.Password,
+			Username: username,
+			Password: password,
 			Roles:    pRoles,
 			CustomData: InfoData{
-				DatabaseName: pSpec.Name,
-				BillingCode:  pSpec.BillingCode,
+				DatabaseName: name,
+				BillingCode:  billingcode,
 			},
 		}
 
-		err = pSession.DB(pSpec.Name).UpsertUser(&pUser)
+		err = pSession.DB(name).UpsertUser(&pUser)
 		if err != nil {
+			fmt.Println(err)
 			return nil, err
 		}
 	}
 
 	return &Instance{
 		Id:            Id,
-		Name:          pSpec.Name,
-		ProviderId:    pSpec.Name,
+		Name:          name,
+		ProviderId:    name,
 		Plan:          plan,
-		Username:      pSpec.Username,
-		Password:      pSpec.Password,
-		Endpoint:      settings.MasterHost() + "/" + pSpec.Name,
+		Username:      username,
+		Password:      password,
+		Endpoint:      settings.MasterHost() + "/" + name,
 		Status:        "available",
 		Ready:         true,
 		Engine:        settings.Engine,
@@ -205,11 +146,19 @@ func (provider MongodbProvider) Provision(Id string, plan *ProviderPlan, Owner s
 
 func (provider MongodbProvider) Deprovision(instance *Instance, takeSnapshot bool) error {
 	var settings MongodbProviderPlanSettings
-	if err := json.Unmarshal([]byte(Instance.Plan.providerPrivateDetails), &settings); err != nil {
+	if err := json.Unmarshal([]byte(instance.Plan.providerPrivateDetails), &settings); err != nil {
 		return err
 	}
-
-	rSession, err = mgo.Dial(settings.MasterUri)
+	dialInfo, err := mgo.ParseURL(settings.MasterUri)
+	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
+		conn, err := tls.Dial("tcp", addr.String(), tlsConfig)
+		return conn, err
+	}
+	if err != nil {
+		fmt.Println("Failed to parse URI: ", err)
+		os.Exit(1)
+	}
+	rSession, err := mgo.DialWithInfo(dialInfo)
 	if err != nil {
 		return err
 	}
@@ -226,15 +175,6 @@ func (provider MongodbProvider) Deprovision(instance *Instance, takeSnapshot boo
 		}
 
 		err = rSession.DB(instance.Name).DropDatabase()
-
-		if err != nil {
-			return err
-		} else {
-			err = rSession.DB("").C(provisionCollection).Remove(r)
-			if err != nil {
-				return nil
-			}
-		}
 	}
 
 	return err
