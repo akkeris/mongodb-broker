@@ -369,10 +369,16 @@ func (b *BusinessLogic) Bind(request *osb.BindRequest, c *broker.RequestContext)
 		}
 	}
 
+	scheme := Instance.Scheme + "://"
+	if Instance.Scheme == "" {
+		scheme = ""
+	}
 	return &broker.BindResponse{
 		BindResponse: osb.BindResponse{
-			Async:       false,
-			Credentials: provider.GetUrl(Instance),
+			Async: false,
+			Credentials: map[string]interface{}{
+				"DATABASE_URL": scheme + Instance.Username + ":" + Instance.Password + "@" + Instance.Endpoint,
+			},
 		},
 	}, nil
 }
@@ -429,13 +435,19 @@ func (b *BusinessLogic) GetBinding(request *osb.GetBindingRequest, context *brok
 		glog.Errorf("Error finding instance id (during getbinding): %s\n", err.Error())
 		return nil, err
 	}
-	provider, err := GetProviderByPlan(b.namePrefix, Instance.Plan)
 	if err != nil {
 		glog.Errorf("Unable to provision, cannot find provider (GetProviderByPlan failed): %s\n", err.Error())
 		return nil, InternalServerError()
 	}
+
+	scheme := Instance.Scheme + "://"
+	if Instance.Scheme == "" {
+		scheme = ""
+	}
 	return &osb.GetBindingResponse{
-		Credentials: provider.GetUrl(Instance),
+		Credentials: map[string]interface{}{
+			"DATABASE_URL": scheme + Instance.Username + ":" + Instance.Password + "@" + Instance.Endpoint,
+		},
 	}, nil
 }
 
