@@ -5,18 +5,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/golang/glog"
 	_ "github.com/lib/pq"
-	"gopkg.in/mgo.v2"
+	// "gopkg.in/mgo.v2"
+	"github.com/globalsign/mgo"
 	"net"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 type InfoData struct {
 	DatabaseName string
 	BillingCode  string
-	DATABASE_URL string
+	MONGODB_URL  string
 }
 
 // provider=mongodb in database
@@ -48,6 +51,9 @@ func NewMongodbProvider(namePrefix string) (MongodbProvider, error) {
 
 func (provider MongodbProvider) GetInstance(name string, plan *ProviderPlan) (*Instance, error) {
 	var settings MongodbProviderPlanSettings
+
+	glog.V(3).Infof("[p.GetInstance] start name: %s, plan: %s", name, plan.ID)
+
 	if err := json.Unmarshal([]byte(plan.providerPrivateDetails), &settings); err != nil {
 		return nil, err
 	}
@@ -72,34 +78,67 @@ func (provider MongodbProvider) PerformPostProvision(db *Instance) (*Instance, e
 	return db, nil
 }
 
+func redactMongoDbURL(dburl string) string {
+	mInfo, err := mgo.ParseURL(dburl)
+
+	if err != nil {
+		return dburl
+	}
+
+	return fmt.Sprintf("mongodb://[REDACTED]:[REDACTED]@%s/%s?authSource=%s", mInfo.Addrs[0], mInfo.Database, mInfo.Source)
+}
+
+func connectToMongoDb(mongoDbUri string) (*mgo.Session, error) {
+	glog.V(3).Infoln("[connectToMongoDb] start")
+
+	dialInfo, err := mgo.ParseURL(mongoDbUri)
+
+	dialInfo.Timeout = time.Second * 30
+	dialInfo.Direct = true
+	dialInfo.FailFast = true
+	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
+		return tls.Dial("tcp", addr.String(), nil)
+	}
+
+	if err != nil {
+		fmt.Println("Failed to parse master mongodb URI: ", err)
+		os.Exit(1)
+	}
+
+	glog.V(1).Infof("[m.connectToMongoDb] connect to mongodb: %s\n", redactMongoDbURL(mongoDbUri))
+
+	glog.V(4).Infof("[m.connectToMongoDb] dialInfo: %+v", dialInfo)
+
+	pSession, err := mgo.DialWithInfo(dialInfo)
+	if err != nil {
+		glog.Errorf("[m.connectToMongoDb] error: %s", err)
+		return nil, err
+	}
+
+	glog.V(3).Infoln("[m.connectToMongoDb] SetMode")
+
+	pSession.SetMode(mgo.Monotonic, true)
+
+	return pSession, nil
+}
+
 func (provider MongodbProvider) Provision(Id string, plan *ProviderPlan, Owner string) (*Instance, error) {
 	var settings MongodbProviderPlanSettings
+
+	glog.Infof("[m.Provision] start id: %s, plan %s\n", Id, plan.ID)
+	glog.V(4).Infof("[m.Provision] private details: %+v", plan.providerPrivateDetails)
+
 	if err := json.Unmarshal([]byte(plan.providerPrivateDetails), &settings); err != nil {
 		fmt.Println(err)
 		return nil, err
 	}
 
-	fmt.Println(settings)
+	glog.V(3).Infof("[m.Provision] plan settings: %+v", settings)
 
-	dialInfo, err := mgo.ParseURL(settings.MasterUri)
-	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
-		conn, err := tls.Dial("tcp", addr.String(), nil)
-		return conn, err
-	}
-
-	fmt.Println(dialInfo)
+	pSession, err := connectToMongoDb(settings.MasterUri)
 	if err != nil {
-		fmt.Println("Failed to parse URI: ", err)
-		os.Exit(1)
-	}
-
-	pSession, err := mgo.DialWithInfo(dialInfo)
-	if err != nil {
-		fmt.Println(err)
 		return nil, err
 	}
-
-	pSession.SetMode(mgo.Monotonic, true)
 	defer pSession.Close()
 
 	pRoles := []mgo.Role{
@@ -126,9 +165,11 @@ func (provider MongodbProvider) Provision(Id string, plan *ProviderPlan, Owner s
 			},
 		}
 
+		glog.V(3).Infof("[m.Provision] Upsert user: %s\n", pUser.Username)
+
 		err = pSession.DB(name).UpsertUser(&pUser)
 		if err != nil {
-			fmt.Println(err)
+			glog.V(3).Info(err)
 			return nil, err
 		}
 	}
@@ -151,35 +192,29 @@ func (provider MongodbProvider) Provision(Id string, plan *ProviderPlan, Owner s
 
 func (provider MongodbProvider) Deprovision(instance *Instance, takeSnapshot bool) error {
 	var settings MongodbProviderPlanSettings
+
+	glog.V(3).Infof("[m.Deprovision] start instance: %s\n", instance.Id)
+
 	if err := json.Unmarshal([]byte(instance.Plan.providerPrivateDetails), &settings); err != nil {
 		return err
 	}
-	dialInfo, err := mgo.ParseURL(settings.MasterUri)
-	dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
-		conn, err := tls.Dial("tcp", addr.String(), nil)
-		return conn, err
-	}
-	if err != nil {
-		fmt.Println("Failed to parse URI: ", err)
-		os.Exit(1)
-	}
-	rSession, err := mgo.DialWithInfo(dialInfo)
+
+	rSession, err := connectToMongoDb(settings.MasterUri)
 	if err != nil {
 		return err
 	}
-
-	rSession.SetMode(mgo.Monotonic, true)
 	defer rSession.Close()
 
+	err = rSession.DB(instance.Name).RemoveUser(instance.Username)
 	if err != nil {
+		glog.Errorf("error removing user: %s", instance.Username)
 		return err
-	} else {
-		err = rSession.DB(instance.Name).RemoveUser(instance.Username)
-		if err != nil {
-			return err
-		}
+	}
 
-		err = rSession.DB(instance.Name).DropDatabase()
+	err = rSession.DB(instance.Name).DropDatabase()
+	if err != nil {
+		glog.Errorf("error dropping: %s", instance.Name)
+		return err
 	}
 
 	return err

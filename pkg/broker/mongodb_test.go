@@ -2,19 +2,16 @@ package broker
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	_ "github.com/lib/pq"
 	osb "github.com/pmorie/go-open-service-broker-client/v2"
 	"github.com/pmorie/osb-broker-lib/pkg/broker"
 	. "github.com/smartystreets/goconvey/convey"
-	"gopkg.in/mgo.v2"
-	"net"
 	"os"
 	"testing"
 )
 
-func TestPostgresProvision(t *testing.T) {
+func TestMongoDBProvision(t *testing.T) {
 	var logic *BusinessLogic
 	var catalog *broker.CatalogResponse
 	var plan osb.Plan
@@ -24,7 +21,7 @@ func TestPostgresProvision(t *testing.T) {
 
 	Convey("Given a fresh provisioner.", t, func() {
 		So(os.Getenv("DATABASE_URL"), ShouldNotEqual, "")
-		So(os.Getenv("MONGO_DB_SHARED_URI"), ShouldNotEqual, "")
+		So(os.Getenv("MONGODB_SHARED_URI"), ShouldNotEqual, "")
 		logic, err = NewBusinessLogic(context.TODO(), Options{DatabaseUrl: os.Getenv("DATABASE_URL"), NamePrefix: "test"})
 		So(err, ShouldBeNil)
 		So(logic, ShouldNotBeNil)
@@ -45,13 +42,15 @@ func TestPostgresProvision(t *testing.T) {
 			}
 			So(shared, ShouldEqual, true)
 
-			var ha = false
-			for _, p := range catalog.Services[0].Plans {
-				if p.Name == "high-availability" {
-					ha = true
+			/*
+				var ha = false
+				for _, p := range catalog.Services[0].Plans {
+					if p.Name == "high-availabilty" {
+						ha = true
+					}
 				}
-			}
-			So(ha, ShouldEqual, true)
+				So(ha, ShouldEqual, true)
+			*/
 		})
 
 		Convey("Ensure provisioner for mongodb can provision a database", func() {
@@ -91,34 +90,21 @@ func TestPostgresProvision(t *testing.T) {
 			dres, err := logic.Bind(&brequest, &c)
 			So(err, ShouldBeNil)
 			So(dres, ShouldNotBeNil)
-			So(dres.Credentials["DATABASE_URL"].(string), ShouldStartWith, "mongodb://")
+			So(dres.Credentials["MONGODB_URL"].(string), ShouldStartWith, "mongodb://")
 
-			dbUrl = dres.Credentials["DATABASE_URL"].(string)
+			dbUrl = dres.Credentials["MONGODB_URL"].(string)
 
 			var gbrequest osb.GetBindingRequest = osb.GetBindingRequest{InstanceID: instanceId, BindingID: "foo"}
 			gbres, err := logic.GetBinding(&gbrequest, &c)
 			So(err, ShouldBeNil)
 			So(gbres, ShouldNotBeNil)
-			So(gbres.Credentials["DATABASE_URL"].(string), ShouldStartWith, "mongodb://")
-			So(gbres.Credentials["DATABASE_URL"].(string), ShouldStartWith, dres.Credentials["DATABASE_URL"].(string))
+			So(gbres.Credentials["MONGODB_URL"].(string), ShouldStartWith, "mongodb://")
+			So(gbres.Credentials["MONGODB_URL"].(string), ShouldStartWith, dres.Credentials["MONGODB_URL"].(string))
 		})
 
 		Convey("Connecting to MongoDB", func() {
-			dialInfo, err := mgo.ParseURL(dbUrl)
-			dialInfo.DialServer = func(addr *mgo.ServerAddr) (net.Conn, error) {
-				conn, err := tls.Dial("tcp", addr.String(), nil)
-				return conn, err
-			}
-			if err != nil {
-				fmt.Println("Failed to parse URI: ", err)
-				os.Exit(1)
-			}
-			rSession, err := mgo.DialWithInfo(dialInfo)
-			if err != nil {
-				fmt.Println(err.Error())
-			}
+			rSession, err := connectToMongoDb(dbUrl)
 			So(err, ShouldBeNil)
-			rSession.SetMode(mgo.Monotonic, true)
 			defer rSession.Close()
 
 			db := rSession.DB("")

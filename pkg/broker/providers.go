@@ -2,6 +2,7 @@ package broker
 
 import (
 	"errors"
+	"github.com/golang/glog"
 	osb "github.com/pmorie/go-open-service-broker-client/v2"
 )
 
@@ -25,6 +26,7 @@ type ProviderPlan struct {
 	providerPrivateDetails string    `json:"-"` /* NEVER allow this to be serialized into a JSON call as it may accidently send sensitive info to callbacks */
 	ID                     string    `json:"id"`
 	Scheme                 string    `json:"scheme"`
+	preprovision           int       `json:"preprovision"`
 }
 
 type Provider interface {
@@ -39,6 +41,7 @@ type Provider interface {
 }
 
 func GetProviderByPlan(namePrefix string, plan *ProviderPlan) (Provider, error) {
+	glog.V(4).Infof("[GetProviderByPlan] start ")
 	if plan.Provider == MongoDBInstance {
 		return NewMongodbProvider(namePrefix)
 	} else {
