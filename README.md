@@ -22,7 +22,7 @@ Note almost all of these can be set via the command line as well.
 
 * `DATABASE_URL` - The postgres database to store its information on what databases its provisioned, this should be in the format of `postgres://user:password@host:port/database?sslmode=disable` or leave off sslmode=disable if ssl is supported.  This will auto create the schema if its unavailable.
 * `NAME_PREFIX` - The prefix to use for all provisioned databases this should be short and help namespace databases created by the broker vs. other databases that may exist in the broker for other purposes. This is global to all of the providers configured.
-* `MONGODB_API_RUNTIME` - Version of mongodb api
+
 
 **Optional**
 

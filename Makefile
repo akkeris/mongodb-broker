@@ -3,34 +3,41 @@ ifdef USE_SUDO_FOR_DOCKER
 	SUDO_CMD = sudo
 endif
 
-BASE_REPO ?= github.com/akkeris/mongodb-broker
-IMAGE ?= docker.io/akkeris/mongodb-broker
+NAME ?= mongodb-broker
+BASE_REPO ?= github.com/akkeris/$(NAME)
+IMAGE ?= docker.io/akkeris/$(NAME)
 TAG ?= $(shell git describe --tags --always)
 PULL ?= IfNotPresent
 
-build: ## Builds the starter pack
-	go build -i $(BASE_REPO)/cmd/servicebroker
+build: ## Builds mongodb-broker
+	go build -i  -o $(NAME) $(BASE_REPO)/cmd/servicebroker
 
 test: ## Runs the tests
 	go get github.com/smartystreets/goconvey
-	go test -timeout 2400s -v $(shell go list ./... | grep -v /vendor/ | grep -v /test/) -logtostderr=1 -stderrthreshold 0
+	go test -timeout 5s -v github.com/akkeris/mongodb-broker/pkg/broker -args -logtostderr=1 -stderrthreshold=4 -v 4
 
 coverage: ## Runs the tests
 	go get github.com/smartystreets/goconvey
-	go test -timeout 2400s -coverprofile cover.out -v $(shell go list ./... | grep -v /vendor/ | grep -v /test/)
+	go test -timeout 5s -coverprofile cover.out -v github.com/akkeris/mongodb-broker/pkg/broker -args -logtostderr=1 -stderrthreshold=4 -v 4
 
-linux: ## Builds a Linux executable
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
-	go build -o servicebroker-linux --ldflags="-s" $(BASE_REPO)/cmd/servicebroker
+run: image ## runs docker container local for testing
+	docker run --name=mdb --env-file=.test.env -p 4242:4242 $(NAME) ./start.sh -v 4
 
-image: linux ## Builds a Linux based image
-	cp servicebroker-linux image/servicebroker
-	$(SUDO_CMD) docker build image/ -t "$(IMAGE):$(TAG)"
+image: ## Builds image local
+	docker build -t $(NAME) .
+
+#linux: ## Builds a Linux executable
+#	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+#	go build -o servicebroker-linux --ldflags="-s" $(BASE_REPO)/cmd/servicebroker
+
+#image: linux ## Builds a Linux based image
+#	cp servicebroker-linux image/servicebroker
+#	$(SUDO_CMD) docker build image/ -t "$(IMAGE):$(TAG)"
 
 clean: ## Cleans up build artifacts
-	rm -f servicebroker
-	rm -f servicebroker-linux
-	rm -f image/servicebroker
+	rm -f $(NAME)
+#	rm -f servicebroker-linux
+#	rm -f image/servicebroker
 
 push: image ## Pushes the image to dockerhub, REQUIRES SPECIAL PERMISSION
 	$(SUDO_CMD) docker push "$(IMAGE):$(TAG)"
@@ -40,9 +47,9 @@ deploy-helm: image ## Deploys image with helm
 	charts/servicebroker \
 	--set image="$(IMAGE):$(TAG)",imagePullPolicy="$(PULL)"
 
-deploy-openshift: image ## Deploys image to openshift
-	oc project osb-starter-pack || oc new-project osb-starter-pack
-	openshift/deploy.sh $(IMAGE):$(TAG)
+#deploy-openshift: image ## Deploys image to openshift
+#	oc project osb-starter-pack || oc new-project osb-starter-pack
+#	openshift/deploy.sh $(IMAGE):$(TAG)
 
 create-ns: ## Cleans up the namespaces
 	kubectl create ns test-ns

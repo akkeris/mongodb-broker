@@ -73,6 +73,7 @@ func UpdateTaskStatus(storage Storage, taskId string, retries int64, result stri
 }
 
 func RunPreprovisionTasks(ctx context.Context, o Options, namePrefix string, storage Storage, wait int64) {
+	glog.V(4).Infoln("[RunPreprovisionTasks] start")
 	t := time.NewTicker(time.Second * time.Duration(wait))
 	dbEntries, err := storage.StartProvisioningTasks()
 	if err != nil {
@@ -80,6 +81,8 @@ func RunPreprovisionTasks(ctx context.Context, o Options, namePrefix string, sto
 		return
 	}
 	for _, entry := range dbEntries {
+		glog.V(4).Infoln("[RunPreprovisionTasks] loop start")
+
 		glog.Infof("Starting preprovisioning database: %s with plan: %s\n", entry.Id, entry.PlanId)
 
 		plan, err := storage.GetPlanByID(entry.PlanId)
@@ -119,6 +122,8 @@ func RunPreprovisionTasks(ctx context.Context, o Options, namePrefix string, sto
 			}
 		}
 		glog.Infof("Finished preprovisioning database: %s with plan: %s\n", entry.Id, entry.PlanId)
+		glog.V(4).Infoln("[RunPreprovisionTasks] loop end")
+
 		<-t.C
 	}
 }

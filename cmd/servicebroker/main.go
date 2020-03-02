@@ -19,6 +19,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/akkeris/mongodb-broker/pkg/broker"
+
 	"github.com/pmorie/osb-broker-lib/pkg/metrics"
 	"github.com/pmorie/osb-broker-lib/pkg/rest"
 	"github.com/pmorie/osb-broker-lib/pkg/server"
@@ -74,11 +75,14 @@ func run() error {
 }
 
 func runWithContext(ctx context.Context) error {
+	glog.V(3).Infoln("[runWithContext] start")
 	if flag.Arg(0) == "version" {
 		fmt.Printf("%s/%s\n", path.Base(os.Args[0]), "0.1.0")
 		return nil
 	}
 	if options.RunBackgroundTasks {
+		glog.V(3).Infoln("[runWithContext] call RunBackGroundTasks")
+
 		return broker.RunBackgroundTasks(ctx, options.Options)
 		// The above will never return expect on fatal errors
 	}
@@ -93,6 +97,8 @@ func runWithContext(ctx context.Context) error {
 		addr = ":" + os.Getenv("PORT")
 	}
 
+	glog.V(3).Infoln("[runWithContext] call NewBusinessLogic")
+
 	businessLogic, err := broker.NewBusinessLogic(ctx, options.Options)
 	if err != nil {
 		glog.Errorln("Error starting provision logic")
@@ -104,10 +110,15 @@ func runWithContext(ctx context.Context) error {
 	osbMetrics := metrics.New()
 	reg.MustRegister(osbMetrics)
 
+	glog.V(3).Infoln("[runWithContext] call NewAPISerface")
+
 	api, err := rest.NewAPISurface(businessLogic, osbMetrics)
 	if err != nil {
+		glog.Errorf("[runWithContext] error: %s\n", err)
 		return err
 	}
+
+	glog.V(3).Infoln("[runWithContext] call server.New")
 
 	s := server.New(api, reg)
 
@@ -136,6 +147,7 @@ func runWithContext(ctx context.Context) error {
 	glog.Infof("Starting broker!")
 
 	if options.Insecure {
+		glog.V(4).Infof("Starting insecure broker")
 		err = s.Run(ctx, addr)
 	} else {
 		if options.TLSCert != "" && options.TLSKey != "" {
@@ -150,6 +162,8 @@ func runWithContext(ctx context.Context) error {
 			err = s.RunTLSWithTLSFiles(ctx, addr, options.TLSCertFile, options.TLSKeyFile)
 		}
 	}
+	glog.V(3).Infoln("[runWithContext] end")
+
 	return err
 }
 

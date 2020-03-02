@@ -16,6 +16,7 @@ type BusinessLogic struct {
 }
 
 func NewBusinessLogic(ctx context.Context, o Options) (*BusinessLogic, error) {
+	glog.V(3).Infoln("[b.NewBusinessLogic] start")
 	storage, namePrefix, err := InitFromOptions(ctx, o)
 	if err != nil {
 		return nil, err
@@ -29,6 +30,7 @@ func NewBusinessLogic(ctx context.Context, o Options) (*BusinessLogic, error) {
 }
 
 func (b *BusinessLogic) GetCatalog(c *broker.RequestContext) (*broker.CatalogResponse, error) {
+	glog.V(3).Infoln("[b.GetCatalog] start")
 	response := &broker.CatalogResponse{}
 	services, err := b.storage.GetServices()
 	if err != nil {
@@ -40,6 +42,7 @@ func (b *BusinessLogic) GetCatalog(c *broker.RequestContext) (*broker.CatalogRes
 }
 
 func GetInstanceById(namePrefix string, storage Storage, Id string) (*Instance, error) {
+	glog.V(4).Infof("[GetInstanceById]: start Id: %s\n", Id)
 	entry, err := storage.GetInstance(Id)
 	if err != nil {
 		return nil, err
@@ -76,10 +79,13 @@ func GetInstanceById(namePrefix string, storage Storage, Id string) (*Instance, 
 }
 
 func (b *BusinessLogic) GetInstanceById(Id string) (*Instance, error) {
+	glog.V(4).Infof("[b.GetInstanceById]: start Id: %s\n", Id)
+
 	return GetInstanceById(b.namePrefix, b.storage, Id)
 }
 
 func (b *BusinessLogic) GetUnclaimedInstance(PlanId string, InstanceId string) (*Instance, error) {
+	glog.V(3).Infof("[b.GetUnclaimedInstance] start PlanID: %s, InstanceId: %s\n", PlanId, InstanceId)
 	Entry, err := b.storage.GetUnclaimedInstance(PlanId, InstanceId)
 	if err != nil {
 		return nil, err
@@ -94,7 +100,7 @@ func (b *BusinessLogic) GetUnclaimedInstance(PlanId string, InstanceId string) (
 	return Instance, nil
 }
 
-// A peice of advice, never try to make this syncronous by waiting for a to return a response. The problem is
+// A piece of advice, never try to make this syncronous by waiting for a to return a response. The problem is
 // that can take up to 10 minutes in my experience (depending on the provider), and aside from the API call timing
 // out the other issue is it can cause the mutex lock to make the entire API unresponsive.
 func (b *BusinessLogic) Provision(request *osb.ProvisionRequest, c *broker.RequestContext) (*broker.ProvisionResponse, error) {
@@ -102,6 +108,7 @@ func (b *BusinessLogic) Provision(request *osb.ProvisionRequest, c *broker.Reque
 	defer b.Unlock()
 	response := broker.ProvisionResponse{}
 
+	glog.V(3).Infoln("[b.Provision] start")
 	if !request.AcceptsIncomplete {
 		return nil, UnprocessableEntityWithMessage("AsyncRequired", "The query parameter accepts_incomplete=true MUST be included the request.")
 	}
@@ -131,8 +138,10 @@ func (b *BusinessLogic) Provision(request *osb.ProvisionRequest, c *broker.Reque
 		response.Exists = true
 	} else if err != nil && err.Error() == "Cannot find resource instance" {
 		response.Exists = false
-		Instance, err = b.GetUnclaimedInstance(request.PlanID, request.InstanceID)
-
+		// Only check for preprovisioned instance if plan configured to preprovision
+		if plan.preprovision > 0 {
+			Instance, err = b.GetUnclaimedInstance(request.PlanID, request.InstanceID)
+		}
 		if err != nil && err.Error() == "Cannot find resource instance" {
 			// Create a new one
 			provider, err := GetProviderByPlan(b.namePrefix, plan)
@@ -192,12 +201,16 @@ func (b *BusinessLogic) Provision(request *osb.ProvisionRequest, c *broker.Reque
 
 	response.ExtensionAPIs = b.ConvertActionsToExtensions(Instance.Id)
 
+	glog.V(3).Infoln("[b.Provision] end")
+
 	return &response, nil
 }
 
 func (b *BusinessLogic) Deprovision(request *osb.DeprovisionRequest, c *broker.RequestContext) (*broker.DeprovisionResponse, error) {
 	b.Lock()
 	defer b.Unlock()
+
+	glog.V(3).Infoln("[b.Deprovision] start")
 
 	response := broker.DeprovisionResponse{}
 	Instance, err := b.GetInstanceById(request.InstanceID)
@@ -234,6 +247,7 @@ func (b *BusinessLogic) Deprovision(request *osb.DeprovisionRequest, c *broker.R
 }
 
 func (b *BusinessLogic) Update(request *osb.UpdateInstanceRequest, c *broker.RequestContext) (*broker.UpdateInstanceResponse, error) {
+	glog.V(3).Infoln("[b.Update] start")
 	response := broker.UpdateInstanceResponse{}
 	if !request.AcceptsIncomplete {
 		return nil, UnprocessableEntity()
@@ -281,6 +295,7 @@ func (b *BusinessLogic) Update(request *osb.UpdateInstanceRequest, c *broker.Req
 }
 
 func (b *BusinessLogic) LastOperation(request *osb.LastOperationRequest, c *broker.RequestContext) (*broker.LastOperationResponse, error) {
+	glog.V(3).Infoln("[b.LastOperation] start")
 	response := broker.LastOperationResponse{}
 
 	upgrading, err := b.storage.IsUpgrading(request.InstanceID)
@@ -341,6 +356,8 @@ func (b *BusinessLogic) LastOperation(request *osb.LastOperationRequest, c *brok
 func (b *BusinessLogic) Bind(request *osb.BindRequest, c *broker.RequestContext) (*broker.BindResponse, error) {
 	b.Lock()
 	defer b.Unlock()
+
+	glog.V(3).Infoln("[b.Bind] start")
 	Instance, err := b.GetInstanceById(request.InstanceID)
 	if err != nil && err.Error() == "Cannot find resource instance" {
 		return nil, NotFound()
@@ -373,11 +390,12 @@ func (b *BusinessLogic) Bind(request *osb.BindRequest, c *broker.RequestContext)
 	if Instance.Scheme == "" {
 		scheme = ""
 	}
+
 	return &broker.BindResponse{
 		BindResponse: osb.BindResponse{
 			Async: false,
 			Credentials: map[string]interface{}{
-				"DATABASE_URL": scheme + Instance.Username + ":" + Instance.Password + "@" + Instance.Endpoint,
+				"MONGODB_URL": scheme + Instance.Username + ":" + Instance.Password + "@" + Instance.Endpoint,
 			},
 		},
 	}, nil
@@ -387,6 +405,7 @@ func (b *BusinessLogic) Unbind(request *osb.UnbindRequest, c *broker.RequestCont
 	b.Lock()
 	defer b.Unlock()
 
+	glog.V(3).Infoln("[b.Unbind] start")
 	Instance, err := b.GetInstanceById(request.InstanceID)
 	if err != nil && err.Error() == "Cannot find resource instance" {
 		return nil, NotFound()
@@ -425,6 +444,7 @@ func (b *BusinessLogic) ValidateBrokerAPIVersion(version string) error {
 }
 
 func (b *BusinessLogic) GetBinding(request *osb.GetBindingRequest, context *broker.RequestContext) (*osb.GetBindingResponse, error) {
+	glog.V(3).Infoln("[b.GetBinding] start")
 	Instance, err := b.GetInstanceById(request.InstanceID)
 	if err == nil && !CanGetBindings(Instance.Status) {
 		return nil, UnprocessableEntityWithMessage("ServiceNotYetAvailable", "The service requested is not yet available.")
@@ -446,7 +466,7 @@ func (b *BusinessLogic) GetBinding(request *osb.GetBindingRequest, context *brok
 	}
 	return &osb.GetBindingResponse{
 		Credentials: map[string]interface{}{
-			"DATABASE_URL": scheme + Instance.Username + ":" + Instance.Password + "@" + Instance.Endpoint,
+			"MONGODB_URL": scheme + Instance.Username + ":" + Instance.Password + "@" + Instance.Endpoint,
 		},
 	}, nil
 }

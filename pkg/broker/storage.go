@@ -5,15 +5,22 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
-	"github.com/golang/glog"
-	_ "github.com/lib/pq"
-	osb "github.com/pmorie/go-open-service-broker-client/v2"
+	"fmt"
+	"github.com/lib/pq"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/golang/glog"
+	_ "github.com/lib/pq"
+	osb "github.com/pmorie/go-open-service-broker-client/v2"
 )
+
+/*
+TODO: Add logging, levels 3 and 4
+*/
 
 const plansQuery string = `
 select
@@ -54,8 +61,9 @@ select
     deprecated
 from services where deleted = false `
 
-var sqlCreateScript string = `
-do $$
+const sqlCreateScript string = `
+DO 
+$$
 begin
     create extension if not exists "uuid-ossp";
 
@@ -210,8 +218,7 @@ begin
         insert into plans 
             (plan, service, name, human_name, description, version, type, scheme, categories, cost_cents, preprovision, attributes, provider, provider_private_details)
         values 
-            ('3b0e2917-e997-7134-afa4-ba55a9d5a755', '01bb60d2-f2bb-64c0-4c8b-edd731a690bd', 'shared', 'Shared', 'Mongodb shared instance', '6.0', 'mongodb', 'mongodb', 'Data Stores', 2500, 0, '{}', 'mongodb', '{"master_uri":"${MONGO_DB_SHARED_URI}", "engine":"mongodb", "engine_version":"3.2"}'),
-            ('9724e28c-dd3d-0b41-835d-8b5d918c430a', '01bb60d2-f2bb-64c0-4c8b-edd731a690bd', 'high-availabilty', 'High-Availability', 'Mongodb with high availabity - 100gb', '6.0', 'mongodb', 'mongodb', 'Data Stores', 3500, 0, '{}', 'mongodb', '{"master_uri":"${MONGO_DB_SHARED_URI}", "engine":"mongodb", "engine_version":"3.2"}');
+            ('3b0e2917-e997-7134-afa4-ba55a9d5a755', '01bb60d2-f2bb-64c0-4c8b-edd731a690bd', 'shared', 'Shared', 'Mongodb shared instance', '3.6.3', 'mongodb', 'mongodb', 'Data Stores', 2500, 0, '{}', 'mongodb', '{"master_uri":"${MONGODB_SHARED_URI}", "engine":"mongodb", "engine_version":"3.2"}');
     end if;
 end
 $$
@@ -258,6 +265,9 @@ type PostgresStorage struct {
 }
 
 func (b *PostgresStorage) getPlans(subquery string, arg string) ([]ProviderPlan, error) {
+
+	glog.V(3).Infoln("[getPlans] start")
+
 	// arg could be a service ID or Plan Id
 	rows, err := b.db.Query(plansQuery+subquery, arg)
 	if err != nil {
@@ -331,12 +341,14 @@ func (b *PostgresStorage) getPlans(subquery string, arg string) ([]ProviderPlan,
 						"type":    engineType,
 						"version": engineVersion,
 					},
+					"preprovision": preprovision,
 				},
 			},
 			Provider:               GetProvidersFromString(provider),
 			Scheme:                 scheme,
 			providerPrivateDetails: os.ExpandEnv(providerPrivateDetails),
 			ID:                     planId,
+			preprovision:           preprovision,
 		})
 	}
 	return plans, nil
@@ -345,6 +357,7 @@ func (b *PostgresStorage) getPlans(subquery string, arg string) ([]ProviderPlan,
 func (b *PostgresStorage) GetServices() ([]osb.Service, error) {
 	services := make([]osb.Service, 0)
 
+	glog.V(3).Infoln("[GetServices] start")
 	rows, err := b.db.Query(servicesQuery)
 	if err != nil {
 		return nil, err
@@ -388,6 +401,8 @@ func (b *PostgresStorage) GetServices() ([]osb.Service, error) {
 }
 
 func (b *PostgresStorage) GetPlanByID(planId string) (*ProviderPlan, error) {
+	glog.V(4).Infof("[GetPlanById] start planId: %s", planId)
+
 	plans, err := b.getPlans(" and plans.plan::varchar(1024) = $1::varchar(1024)", planId)
 	if err != nil {
 		return nil, err
@@ -415,6 +430,8 @@ func (b *PostgresStorage) IsRestoring(dbId string) (bool, error) {
 }
 
 func (b *PostgresStorage) GetUnclaimedInstance(PlanId string, InstanceId string) (*Entry, error) {
+	glog.V(3).Infof("[GetUnclaimedInstance] start PlandId: %s InstanceId: %s", PlanId, InstanceId)
+
 	tx, err := b.db.Begin()
 	if err != nil {
 		return nil, err
@@ -454,6 +471,7 @@ func (b *PostgresStorage) GetUnclaimedInstance(PlanId string, InstanceId string)
 }
 
 func (b *PostgresStorage) ReturnClaimedInstance(Id string) error {
+	glog.V(4).Infof("[ReturnClaimedInstance] start Id: %s\n", Id)
 	rows, err := b.db.Exec("update resources set claimed = false, id = uuid_generate_v4()::varchar(1024) where id = $1 and status = 'available' and deleted = false and claimed = true", Id)
 	if err != nil {
 		return err
@@ -491,6 +509,7 @@ func (b *PostgresStorage) UpdateInstance(Instance *Instance, PlanId string) erro
 
 func (b *PostgresStorage) ValidateInstanceID(id string) error {
 	var count int64
+	glog.V(4).Infof("[ValidateInstanceID] start: %s\n", id)
 	err := b.db.QueryRow("select count(*) from resources where id = $1", id).Scan(&count)
 	if err != nil {
 		return err
@@ -515,11 +534,14 @@ func (b *PostgresStorage) StartProvisioningTasks() ([]Entry, error) {
             services.deprecated = false
     `
 
+	glog.V(4).Infoln("[StartPrevisionTasks] begin")
 	rows, err := b.db.Query(sqlSelectToProvisionQuery)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
+	glog.V(4).Infof("[StartProvisioningTasks] %-v\n", rows)
 
 	entries := make([]Entry, 0)
 
@@ -539,11 +561,16 @@ func (b *PostgresStorage) StartProvisioningTasks() ([]Entry, error) {
 			}
 		}
 	}
+
+	glog.V(4).Infoln("[StartPrevisionTasks] end")
+
 	return entries, nil
 }
 
 func (b *PostgresStorage) GetInstance(Id string) (*Entry, error) {
 	var entry Entry
+
+	glog.V(4).Infof("[GetInstance] start: %s\n", Id)
 	err := b.db.QueryRow("select id, name, plan, claimed, status, username, password, endpoint, (select count(*) from tasks where tasks.resource=resources.id and tasks.status = 'started' and tasks.deleted = false) as tasks from resources where id = $1 and deleted = false", Id).Scan(&entry.Id, &entry.Name, &entry.PlanId, &entry.Claimed, &entry.Status, &entry.Username, &entry.Password, &entry.Endpoint, &entry.Tasks)
 
 	if err != nil && err.Error() == "sql: no rows in result set" {
@@ -556,10 +583,12 @@ func (b *PostgresStorage) GetInstance(Id string) (*Entry, error) {
 
 func (b *PostgresStorage) AddTask(Id string, action TaskAction, metadata string) (string, error) {
 	var task_id string
+	glog.V(4).Infof("[AddTask] start: %s\n", Id)
 	return task_id, b.db.QueryRow("insert into tasks (task, resource, action, metadata) values (uuid_generate_v4(), $1, $2, $3) returning task", Id, action, metadata).Scan(&task_id)
 }
 
 func (b *PostgresStorage) UpdateTask(Id string, status *string, retries *int64, metadata *string, result *string, started *time.Time, finsihed *time.Time) error {
+	glog.V(4).Infof("[UpdateTask] start: %s\n", Id)
 	_, err := b.db.Exec("update tasks set status = coalesce($2, status), retries = coalesce($3, retries), metadata = coalesce($4, metadata), result = coalesce($5, result), started = coalesce($6, started), finished = coalesce($7, finished) where task = $1", Id, status, retries, metadata, result, started, finsihed)
 	return err
 }
@@ -592,18 +621,40 @@ func (b *PostgresStorage) PopPendingTask() (*Task, error) {
 	return &task, nil
 }
 
+func redactDatabaseURL(dburl string) string {
+	pstr, err := pq.ParseURL(dburl)
+
+	if err != nil {
+		return dburl
+	}
+
+	elem := strings.Split(pstr, " ")
+
+	vars := map[string]string{}
+
+	for _, v := range elem {
+		a := strings.Split(v, "=")
+		vars[a[0]] = a[1]
+	}
+
+	return fmt.Sprintf("postgres://[REDACTED]:[REDACTED]@%s:%s/%s", vars["host"], vars["port"], vars["dbname"])
+}
+
 func InitStorage(ctx context.Context, o Options) (*PostgresStorage, error) {
 	// Sanity checks
 	if o.DatabaseUrl == "" && os.Getenv("DATABASE_URL") != "" {
 		o.DatabaseUrl = os.Getenv("DATABASE_URL")
 	}
 	if o.DatabaseUrl == "" {
-		return nil, errors.New("Unable to connect to resource, none was specified in the environment via resource_URL or through the -resource cli option.")
+		return nil, errors.New("unable to connect to database, none was specified in the environment via DATABASE_URL or through the -database-url cli option")
 	}
+
+	glog.Infof("DATABASE_URL=%s", redactDatabaseURL(o.DatabaseUrl))
+
 	db, err := sql.Open("postgres", o.DatabaseUrl)
 	if err != nil {
-		glog.Errorf("Unable to create resource schema: %s\n", err.Error())
-		return nil, errors.New("Unable to create resource schema: " + err.Error())
+		glog.Errorf("Unable to open database: %s\n", err.Error())
+		return nil, errors.New("Unable to open database: " + err.Error())
 	}
 
 	_, err = db.Exec(sqlCreateScript)
