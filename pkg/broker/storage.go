@@ -210,7 +210,7 @@ begin
         insert into services 
             (service, name, human_name, description, categories, image, beta, deprecated)
         values 
-			('01bb60d2-f2bb-64c0-4c8b-edd731a690bd','mongodb', 'Akkeris Mongodb', 'NOSQL database.', 'Data Stores,mongodb', '', false, false);
+			('01bb60d2-f2bb-64c0-4c8b-edd731a690bd','akkeris-mongodb', 'Akkeris Mongodb', 'NOSQL database.', 'Data Stores,mongodb', '', false, false);
     end if;
 
     -- populate some default plans
