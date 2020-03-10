@@ -1,3 +1,4 @@
 #!/bin/sh
 
-GLOG_logtostderr=1 ./mongodb-broker -insecure -logtostderr=1 -stderrthreshold 0 -background-tasks $*
+export GLOG_logtostderr=1 
+exec ./mongodb-broker -insecure -logtostderr=1 -stderrthreshold 0 -background-tasks $*
