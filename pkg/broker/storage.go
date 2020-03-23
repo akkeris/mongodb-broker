@@ -6,12 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/lib/pq"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/lib/pq"
 
 	"github.com/golang/glog"
 	_ "github.com/lib/pq"
@@ -210,7 +211,7 @@ begin
         insert into services 
             (service, name, human_name, description, categories, image, beta, deprecated)
         values 
-			('01bb60d2-f2bb-64c0-4c8b-edd731a690bd','akkeris-mongodb', 'Akkeris Mongodb', 'NOSQL database.', 'Data Stores,mongodb', '', false, false);
+			('1f1b58ff-8bbc-49f9-a0e4-708a11ec174a','akkeris-mongodb', 'Akkeris Mongodb', 'NOSQL database.', 'Data Stores,mongodb', '', false, false);
     end if;
 
     -- populate some default plans
@@ -218,7 +219,7 @@ begin
         insert into plans 
             (plan, service, name, human_name, description, version, type, scheme, categories, cost_cents, preprovision, attributes, provider, provider_private_details)
         values 
-            ('3b0e2917-e997-7134-afa4-ba55a9d5a755', '01bb60d2-f2bb-64c0-4c8b-edd731a690bd', 'shared', 'Shared', 'Mongodb shared instance', '3.6.3', 'mongodb', 'mongodb', 'Data Stores', 2500, 0, '{}', 'mongodb', '{"master_uri":"${MONGODB_SHARED_URI}", "engine":"mongodb", "engine_version":"3.2"}');
+            ('54f201a4-b4be-4f29-87b3-25f68ef2c8f2', '1f1b58ff-8bbc-49f9-a0e4-708a11ec174a', 'shared', 'Shared', 'Mongodb shared instance', '3.6.3', 'mongodb', 'mongodb', 'Data Stores', 2500, 0, '{}', 'mongodb', '{"master_uri":"${MONGODB_SHARED_URI}", "engine":"mongodb", "engine_version":"3.2"}');
     end if;
 end
 $$
