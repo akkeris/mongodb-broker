@@ -5,15 +5,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
 	"github.com/golang/glog"
 	_ "github.com/lib/pq"
+
 	// "gopkg.in/mgo.v2"
-	"github.com/globalsign/mgo"
 	"net"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/globalsign/mgo"
 )
 
 type InfoData struct {
@@ -65,7 +68,7 @@ func (provider MongodbProvider) GetInstance(name string, plan *ProviderPlan) (*I
 		Plan:          plan,
 		Username:      "", // provider should not store this.
 		Password:      "", // provider should not store this.
-		Endpoint:      settings.MasterHost() + "/" + name,
+		Endpoint:      settings.MasterHost() + "/" + name + "?ssl=true",
 		Status:        "available",
 		Ready:         true,
 		Engine:        "mongodb",
@@ -181,7 +184,7 @@ func (provider MongodbProvider) Provision(Id string, plan *ProviderPlan, Owner s
 		Plan:          plan,
 		Username:      username,
 		Password:      password,
-		Endpoint:      settings.MasterHost() + "/" + name,
+		Endpoint:      settings.MasterHost() + "/" + name + "?ssl=true",
 		Status:        "available",
 		Ready:         true,
 		Engine:        settings.Engine,
